@@ -8,11 +8,13 @@ use std::process::{Command, Output, Stdio};
 use rustyline::completion::{Completer, FilenameCompleter, Pair};
 use rustyline::error::ReadlineError;
 use rustyline::highlight::MatchingBracketHighlighter;
-use rustyline::hint::HistoryHinter;
+use rustyline::hint::{Hint, Hinter};
 use rustyline::validate::MatchingBracketValidator;
-use rustyline::{CompletionType, Config, Context, EditMode, Editor};
-use rustyline_derive::{Helper, Highlighter, Hinter, Validator};
+use rustyline::{CompletionType, Config, Context, EditMode, Editor, KeyEvent, KeyCode, Modifiers};
+use rustyline_derive::{Helper, Highlighter, Validator};
 use std::collections::HashMap;
+use std::borrow::Cow;
+use std::borrow::Cow::{Borrowed, Owned};
 
 
 #[allow(dead_code)]
@@ -135,15 +137,36 @@ impl AliasManager {
     }
 }
 
+// Custom hint implementation for command suggestions
+struct CommandHint {
+    display: String,
+    complete_up_to: usize,
+}
+
+impl Hint for CommandHint {
+    fn display(&self) -> &str {
+        &self.display
+    }
+
+    fn completion(&self) -> Option<&str> {
+        if self.complete_up_to > 0 {
+            Some(&self.display[..self.complete_up_to])
+        } else {
+            None
+        }
+    }
+}
+
 // Helper struct for rustyline tab completion and other functionality
-#[derive(Helper, Highlighter, Hinter, Validator)]
+#[derive(Helper, Highlighter, Validator)]
 struct RustShellHelper {
     completer: FilenameCompleter,
     highlighter: MatchingBracketHighlighter,
-    hinter: HistoryHinter,
+    hinter: Option<CommandHint>,
     validator: MatchingBracketValidator,
     commands: Vec<String>,
     alias_manager: AliasManager,
+    colored_hint: bool,
 }
 
 impl RustShellHelper {
@@ -168,6 +191,7 @@ impl RustShellHelper {
             "alias".to_string(),
             "unalias".to_string(),
             "pipe".to_string(),
+            "showall".to_string(),
         ];
         
         // Add aliases to command completions
@@ -175,13 +199,17 @@ impl RustShellHelper {
             commands.push(alias.clone());
         }
         
+        // Sort commands for better tab completion experience
+        commands.sort();
+        
         RustShellHelper {
             completer: FilenameCompleter::new(),
             highlighter: MatchingBracketHighlighter::new(),
-            hinter: HistoryHinter {},
+            hinter: None,
             validator: MatchingBracketValidator::new(),
             commands,
             alias_manager,
+            colored_hint: true,
         }
     }
     
@@ -216,6 +244,45 @@ impl RustShellHelper {
         
         self.commands = base_commands;
     }
+
+    // Find a matching command for autocomplete
+    fn find_command_match(&self, line: &str) -> Option<String> {
+        // If line is empty, just return first command
+        if line.is_empty() {
+            return self.commands.first().cloned();
+        }
+
+        // Find command that starts with the current input
+        for cmd in &self.commands {
+            if cmd.starts_with(line) {
+                return Some(cmd.clone());
+            }
+        }
+        None
+    }
+}
+
+impl Hinter for RustShellHelper {
+    type Hint = CommandHint;
+
+    fn hint(&self, line: &str, pos: usize, _ctx: &Context<'_>) -> Option<CommandHint> {
+        // Only show hints at the end of line and for non-empty input
+        if pos < line.len() || line.is_empty() || line.contains(' ') {
+            return None;
+        }
+
+        // Find a command that matches the current line
+        for cmd in &self.commands {
+            if cmd.starts_with(line) && cmd != line {
+                return Some(CommandHint {
+                    display: cmd[line.len()..].to_owned(),
+                    complete_up_to: cmd.len() - line.len(),
+                });
+            }
+        }
+
+        None
+    }
 }
 
 impl Completer for RustShellHelper {
@@ -230,18 +297,28 @@ impl Completer for RustShellHelper {
         // First try to complete the command
         if !line.contains(' ') || pos <= line.find(' ').unwrap_or(line.len()) {
             let mut command_matches = Vec::new();
+            let word = if pos < line.len() { &line[..pos] } else { line };
             
             // Filter commands that match the current word
             for cmd in &self.commands {
-                if cmd.starts_with(line) {
+                if cmd.starts_with(word) {
+                    // Use the display field to add formatting
+                    // This will show the command in a different color in the completion list
                     command_matches.push(Pair {
-                        display: cmd.clone(),
+                        display: format!("{}", cmd),
                         replacement: cmd.clone(),
                     });
                 }
             }
             
             if !command_matches.is_empty() {
+                // If there's only one match and it's exactly what the user typed,
+                // try to find more matches for suggestions
+                if command_matches.len() == 1 && command_matches[0].replacement == word {
+                    return Ok((0, command_matches));
+                }
+                
+                // Return multiple matches for selection with arrow keys
                 return Ok((0, command_matches));
             }
         }
@@ -759,6 +836,42 @@ fn parse_command(args: &[String], alias_manager: Option<&AliasManager>) -> Optio
     }
     
     match expanded_args[0].as_str() {
+        "showall" => {
+            // Handle the special 'showall' command to display all available commands
+            println!("Available commands:");
+            let commands = [
+                "make_dir/mkdir", "create_file/touch", "copy", "move", 
+                "delete_file/rm", "delete_dir/rmdir", "change_dir/cd", 
+                "list/ls", "where_am_i/pwd", "run/exec", "show/cat", 
+                "find", "compress/zip", "help", "exit/quit", 
+                "interactive", "alias", "unalias", "pipe", "showall"
+            ];
+            
+            // Display commands in columns
+            let mut count = 0;
+            for cmd in commands {
+                print!("{:<20}", cmd);
+                count += 1;
+                if count % 4 == 0 {
+                    println!();
+                }
+            }
+            if count % 4 != 0 {
+                println!();
+            }
+            
+            // Also display aliases if available
+            if let Some(manager) = alias_manager {
+                if !manager.aliases.is_empty() {
+                    println!("\nDefined aliases:");
+                    for (name, command) in &manager.aliases {
+                        println!("  {} = '{}'", name, command);
+                    }
+                }
+            }
+            
+            None
+        },
         "make_dir" | "mkdir" => {
             if expanded_args.len() < 2 {
                 println!("Error: make_dir requires a directory name");
@@ -995,6 +1108,7 @@ fn print_help() {
         "  alias [name command]         Create or list aliases",
         "  unalias <name>               Remove an alias",
         "  pipe 'cmd1' 'cmd2' ...       Connect commands with pipes",
+        "  showall                      Display all available commands",
         "  help                         Show this help message",
     ];
     
@@ -1027,8 +1141,9 @@ fn run_interactive_mode() -> io::Result<()> {
     // Create config with rustyline 11.0.0 compatible settings
     let config = Config::builder()
         .history_ignore_space(true)
-        .completion_type(CompletionType::List)
+        .completion_type(CompletionType::Circular)  // Use Circular instead of CircularList
         .edit_mode(EditMode::Emacs)
+        .auto_add_history(true)
         .build();
 
     // Create editor and load alias manager
@@ -1053,6 +1168,11 @@ fn run_interactive_mode() -> io::Result<()> {
     
     // Set helper for editor
     rl.set_helper(Some(helper));
+
+    // Tab cycles forward through suggestions
+    rl.bind_sequence(KeyEvent(KeyCode::Tab, Modifiers::NONE), rustyline::Cmd::Complete);
+    // Shift+Tab cycles backward 
+    rl.bind_sequence(KeyEvent(KeyCode::Tab, Modifiers::SHIFT), rustyline::Cmd::CompleteBackward);
     
     // Try to load history
     let history_path = Path::new(".rustshell_history");
@@ -1073,6 +1193,8 @@ fn run_interactive_mode() -> io::Result<()> {
     
     println!("RustShell Interactive Mode - {}", os_info);
     println!("Type 'help' for a list of commands or 'exit' to quit.");
+    println!("Use Tab for command completion. Type 'showall' to display all available commands.");
+    println!("Tab cycles forward through suggestions, Shift+Tab cycles backward.");
     
     // Interactive loop
     loop {
@@ -1081,11 +1203,6 @@ fn run_interactive_mode() -> io::Result<()> {
         
         match rl.readline(&prompt) {
             Ok(line) => {
-                // Add to history if non-empty
-                if !line.trim().is_empty() {
-                    let _ = rl.add_history_entry(&line);
-                }
-                
                 // Skip empty lines
                 if line.trim().is_empty() {
                     continue;
