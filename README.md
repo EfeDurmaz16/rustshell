@@ -11,16 +11,18 @@ Key benefits:
 - Learn one set of commands that work everywhere
 - Natural language command names that are easy to remember
 - Helpful for developers transitioning between Windows, Linux, and macOS
+- Interactive shell mode with tab completion and command history
+- Support for aliases and command pipelines
 
 ## Available Commands
 
 | Natural Command | Traditional Equivalent | Description | Usage |
 |----------------|------------------------|-------------|-------|
 | `make_dir [-p] <dir>` | `mkdir` | Create a directory | `make_dir test` or `make_dir -p path/to/dir` |
-| `create_file <file>` | `touch` | Create a file | `create_file newfile.txt` |
+| `create_file <file1> [file2...]` | `touch` | Create one or more files | `create_file file1.txt file2.txt` |
 | `copy <src> <dst>` | `cp` | Copy a file | `copy source.txt dest.txt` |
 | `move <src> <dst>` | `mv` | Move a file or directory | `move oldfile.txt newfile.txt` |
-| `delete_file <file>` | `rm` | Delete a file | `delete_file file.txt` |
+| `delete_file <file1> [file2...]` | `rm` | Delete one or more files | `delete_file file1.txt file2.txt` |
 | `delete_dir [-r] <dir>` | `rmdir`/`rm -r` | Delete a directory | `delete_dir test` or `delete_dir -r test` |
 | `change_dir <dir>` | `cd` | Change directory | `change_dir path/to/dir` |
 | `list [dir]` | `ls`/`dir` | List directory contents | `list` or `list path/to/dir` |
@@ -29,6 +31,9 @@ Key benefits:
 | `show <file>` | `cat` | Display file contents | `show myfile.txt` |
 | `find <pattern> [dir]` | `find`/`grep` | Find files by name | `find .txt` or `find .txt /path/to/dir` |
 | `compress <src> <dst>` | `zip`/`tar` | Create a zip archive | `compress myfiles output.zip` |
+| `alias [name command]` | `alias` | Create or list aliases | `alias ll list -la` |
+| `unalias <name>` | `unalias` | Remove an alias | `unalias ll` |
+| `pipe 'cmd1' 'cmd2'` | `|` | Connect commands with pipes | `pipe 'list' 'grep txt'` |
 | `help` | `help` | Show command help | `help` |
 
 Note: The traditional shell commands (mkdir, ls, etc.) also work with this tool.
@@ -50,11 +55,13 @@ While most commands use Rust's native cross-platform libraries, some commands ha
 
 ## Usage
 
+### Command Mode
+
 Run the shell with commands directly:
 
 ```
 rustshell make_dir test
-rustshell create_file file.txt
+rustshell create_file file.txt document.md
 rustshell list
 rustshell where_am_i
 rustshell run echo Hello World
@@ -63,10 +70,57 @@ rustshell find .log
 rustshell compress documents archive.zip
 ```
 
+### Interactive Mode
+
+Run the shell in interactive mode for a more traditional shell experience:
+
+```
+rustshell
+```
+
+or
+
+```
+rustshell interactive
+```
+
+Features in interactive mode:
+- Tab completion for commands and file paths
+- Command history (stored in `.rustshell_history`)
+- Aliases (stored in `.rustshell_aliases`)
+- Keyboard shortcuts (Ctrl+C to exit, Ctrl+A to move to start of line, etc.)
+
+### Alias Management
+
+Create and use aliases to save typing common commands:
+
+```
+# Create an alias
+rustshell alias ll list -la
+
+# Use the alias
+rustshell ll
+
+# List all aliases
+rustshell alias
+
+# Remove an alias
+rustshell unalias ll
+```
+
+### Command Piping
+
+Connect commands together in pipelines:
+
+```
+rustshell pipe 'list' 'grep txt'
+```
+
+This will list all files and then filter for ones containing "txt".
+
 ## Future Enhancements
 
-- Interactive shell mode
 - More advanced commands
-- Tab completion
-- Piping between commands
-- Support for aliases and custom commands 
+- Support for redirections (>, >>, <)
+- Custom scripting capabilities
+- Plugin support 
