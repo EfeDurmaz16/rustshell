@@ -51,13 +51,62 @@ While most commands use Rust's native cross-platform libraries, some commands ha
 
 ## Installation
 
+### Global Installation (Recommended)
+
+1. Clone this repository:
+   ```bash
+   git clone <repository-url>
+   cd rustshell
+   ```
+
+2. Install globally:
+   ```bash
+   cargo install --path .
+   ```
+
+3. Set up your API key (see Configuration section below)
+
+4. Use from anywhere:
+   ```bash
+   rustshell "npm run dev on port 3001"
+   rustshell "create a directory called test"
+   rustshell "list all files"
+   ```
+
+### Local Development
+
 1. Clone this repository
 2. Build the project: `cargo build --release`
-3. Install globally: `cargo install --path .`
+3. Run with: `cargo run -- "your command"`
 
 ## Configuration
 
 RustShell supports natural language processing using OpenAI's API. To enable this feature:
+
+### Option 1: .env File (Recommended)
+
+1. **Set up global configuration**:
+   ```bash
+   mkdir -p ~/.rustshell
+   cp .env.example ~/.rustshell/.env
+   ```
+
+2. **Add your API key**:
+   Edit `~/.rustshell/.env`:
+   ```bash
+   # RustShell Environment Variables
+   OPENAI_API_KEY=your-actual-openai-api-key-here
+   ```
+
+### Option 2: Environment Variable
+
+Set the environment variable globally:
+```bash
+export OPENAI_API_KEY="your-api-key-here"
+# Add to your ~/.bashrc or ~/.zshrc to make it permanent
+```
+
+### Option 3: Config File
 
 1. **Copy the configuration template**:
    ```bash
@@ -65,24 +114,20 @@ RustShell supports natural language processing using OpenAI's API. To enable thi
    cp config/rustshell.toml ~/.rustshell/config.toml
    ```
 
-2. **Add your OpenAI API key**:
-   Edit `~/.rustshell/config.toml` and replace `YOUR_API_KEY_HERE` with your actual OpenAI API key:
+2. **Edit the config file**:
    ```toml
    [llm]
    provider = "openai"
    model = "gpt-3.5-turbo"
-   api_key_env = "sk-your-actual-api-key-here"
+   api_key_env = "OPENAI_API_KEY"  # Environment variable name
    ```
 
-3. **Alternative: Use environment variable**:
-   Instead of storing the key in the config, you can use an environment variable:
-   ```bash
-   export OPENAI_API_KEY="your-api-key-here"
-   ```
-   And keep the config as:
-   ```toml
-   api_key_env = "OPENAI_API_KEY"
-   ```
+### .env File Priority
+
+RustShell looks for `.env` files in this order:
+1. Current directory (`./.env`)
+2. RustShell config directory (`~/.rustshell/.env`)
+3. Home directory (`~/.env`)
 
 ### Natural Language Examples
 

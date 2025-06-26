@@ -101,14 +101,26 @@ pub fn detect_os() -> String {
 }
 
 pub fn is_natural_language(input: &str) -> bool {
+    // If the input is surrounded by quotes, treat it as natural language
+    if (input.starts_with('"') && input.ends_with('"')) || 
+       (input.starts_with('\'') && input.ends_with('\'')) {
+        return true;
+    }
+
+    // Check for npm/development commands patterns
+    let input_lower = input.to_lowercase();
+    if input_lower.contains("npm") || input_lower.contains("yarn") || 
+       input_lower.contains("run dev") || input_lower.contains("port") ||
+       input_lower.contains("start server") || input_lower.contains("build") {
+        return true;
+    }
+
     // Simple heuristics to detect natural language vs direct commands
     let natural_language_indicators = [
         "create", "make", "delete", "remove", "copy", "move", "show", "display",
         "list", "find", "search", "navigate", "go to", "change to", "switch to",
         "how to", "can you", "please", "i want", "i need", "help me",
     ];
-
-    let input_lower = input.to_lowercase();
     
     // Check for natural language indicators
     for indicator in &natural_language_indicators {
@@ -123,7 +135,8 @@ pub fn is_natural_language(input: &str) -> bool {
         // Look for sentence-like patterns
         if input_lower.contains(" a ") || input_lower.contains(" an ") || 
            input_lower.contains(" the ") || input_lower.contains(" to ") ||
-           input_lower.contains(" and ") || input_lower.contains(" or ") {
+           input_lower.contains(" and ") || input_lower.contains(" or ") ||
+           input_lower.contains(" on ") {
             return true;
         }
     }

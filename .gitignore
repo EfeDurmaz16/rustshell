@@ -6,6 +6,7 @@ config/rustshell.toml
 .rustshell/
 *.env
 .env*
+.env.example
 
 # API keys and sensitive files
 **/config.toml

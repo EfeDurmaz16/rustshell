@@ -838,13 +838,21 @@ async fn process_natural_language(input: &str, config: &RustShellConfig) -> Opti
         return None;
     }
 
+    // Strip quotes if present for processing
+    let clean_input = if (input.starts_with('"') && input.ends_with('"')) || 
+                         (input.starts_with('\'') && input.ends_with('\'')) {
+        &input[1..input.len()-1]
+    } else {
+        input
+    };
+
     match config.to_llm_config() {
         Ok(llm_config) => {
             match LLMClient::new(llm_config).await {
                 Ok(client) => {
                     let prompt_template = PromptTemplate::new();
                     let os = detect_os();
-                    let prompt = prompt_template.build_prompt(input, &os);
+                    let prompt = prompt_template.build_prompt(clean_input, &os);
                     
                     let request = LLMRequest {
                         prompt,
@@ -1160,9 +1168,14 @@ fn parse_command(args: &[String], alias_manager: Option<&AliasManager>) -> Optio
             None
         },
         _ => {
-            println!("Unknown command: {}", expanded_args[0]);
-            println!("Use 'help' to see available commands");
-            None
+            // If it's not a known rustshell command, try to execute it as a system command
+            let command = expanded_args[0].clone();
+            let command_args: Vec<String> = expanded_args[1..].to_vec();
+            
+            Some(Box::new(commands::ExecuteCommand {
+                command,
+                args: command_args,
+            }))
         }
     }
 }
@@ -1212,6 +1225,31 @@ fn print_help() {
     };
     
     println!("Current OS: {}", os_info);
+}
+
+// Function to load .env files from multiple locations
+fn load_env_files() {
+    // Try to load .env files in order of preference:
+    // 1. Current directory (.env)
+    // 2. User's rustshell config directory (~/.rustshell/.env)
+    // 3. User's home directory (~/.env)
+    
+    let env_locations = vec![
+        std::env::current_dir().ok().map(|d| d.join(".env")),
+        dirs_next::home_dir().map(|d| d.join(".rustshell").join(".env")),
+        dirs_next::home_dir().map(|d| d.join(".env")),
+    ];
+    
+    for location in env_locations.into_iter().flatten() {
+        if location.exists() {
+            if let Err(e) = dotenv::from_path(&location) {
+                eprintln!("Warning: Failed to load .env from {}: {}", location.display(), e);
+            } else {
+                // Successfully loaded, break to avoid overriding with lower priority files
+                break;
+            }
+        }
+    }
 }
 
 // Function to run in interactive mode
@@ -1369,6 +1407,9 @@ async fn run_interactive_mode() -> io::Result<()> {
 
 #[tokio::main]
 async fn main() {
+    // Load .env file from multiple possible locations
+    load_env_files();
+    
     let args: Vec<String> = env::args().collect();
     
     // Check if we should run in interactive mode (no arguments or explicit "interactive" argument)
