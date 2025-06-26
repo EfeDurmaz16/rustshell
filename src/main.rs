@@ -13,8 +13,14 @@ use rustyline::validate::MatchingBracketValidator;
 use rustyline::{CompletionType, Config, Context, EditMode, Editor, KeyEvent, KeyCode, Modifiers};
 use rustyline_derive::{Helper, Highlighter, Validator};
 use std::collections::HashMap;
-use std::borrow::Cow;
-use std::borrow::Cow::{Borrowed, Owned};
+
+// New modules for LLM integration
+mod llm;
+mod config;
+
+use llm::{LLMClient, LLMRequest};
+use llm::prompts::{PromptTemplate, detect_os, is_natural_language};
+use config::{get_config, RustShellConfig};
 
 
 #[allow(dead_code)]
@@ -167,10 +173,11 @@ struct RustShellHelper {
     commands: Vec<String>,
     alias_manager: AliasManager,
     colored_hint: bool,
+    config: RustShellConfig,
 }
 
 impl RustShellHelper {
-    fn new(alias_manager: AliasManager) -> Self {
+    fn new(alias_manager: AliasManager, config: RustShellConfig) -> Self {
         let mut commands = vec![
             "make_dir".to_string(), "mkdir".to_string(),
             "create_file".to_string(), "touch".to_string(),
@@ -210,6 +217,7 @@ impl RustShellHelper {
             commands,
             alias_manager,
             colored_hint: true,
+            config,
         }
     }
     
@@ -819,6 +827,76 @@ mod commands {
     }
 }
 
+// Async function to process natural language commands
+async fn process_natural_language(input: &str, config: &RustShellConfig) -> Option<String> {
+    if !config.features.enable_llm || config.features.offline_mode {
+        return None;
+    }
+
+    // Check if this looks like natural language
+    if !is_natural_language(input) {
+        return None;
+    }
+
+    match config.to_llm_config() {
+        Ok(llm_config) => {
+            match LLMClient::new(llm_config).await {
+                Ok(client) => {
+                    let prompt_template = PromptTemplate::new();
+                    let os = detect_os();
+                    let prompt = prompt_template.build_prompt(input, &os);
+                    
+                    let request = LLMRequest {
+                        prompt,
+                        max_tokens: config.llm.max_tokens,
+                        temperature: config.llm.temperature,
+                        context: Some(prompt_template.system_prompt.clone()),
+                    };
+
+                    match client.generate(&request).await {
+                        Ok(response) => {
+                            let command = response.content.trim().to_string();
+                            
+                            // Basic safety check
+                            if config.is_dangerous_command(&command) {
+                                println!("⚠️  Warning: This command appears to be potentially dangerous: {}", command);
+                                if config.safety.block_destructive {
+                                    println!("❌ Command blocked by safety settings");
+                                    return None;
+                                }
+                            }
+                            
+                            if config.ui.verbose_mode {
+                                println!("🤖 Translated '{}' to: {}", input, command);
+                            }
+                            
+                            Some(command)
+                        }
+                        Err(e) => {
+                            if config.ui.verbose_mode {
+                                eprintln!("LLM error: {}", e);
+                            }
+                            None
+                        }
+                    }
+                }
+                Err(e) => {
+                    if config.ui.verbose_mode {
+                        eprintln!("Failed to create LLM client: {}", e);
+                    }
+                    None
+                }
+            }
+        }
+        Err(e) => {
+            if config.ui.verbose_mode {
+                eprintln!("LLM configuration error: {}", e);
+            }
+            None
+        }
+    }
+}
+
 fn parse_command(args: &[String], alias_manager: Option<&AliasManager>) -> Option<Box<dyn ShellCommand>> {
     if args.is_empty() {
         return None;
@@ -1137,7 +1215,7 @@ fn print_help() {
 }
 
 // Function to run in interactive mode
-fn run_interactive_mode() -> io::Result<()> {
+async fn run_interactive_mode() -> io::Result<()> {
     // Create config with rustyline 11.0.0 compatible settings
     let config = Config::builder()
         .history_ignore_space(true)
@@ -1145,6 +1223,15 @@ fn run_interactive_mode() -> io::Result<()> {
         .edit_mode(EditMode::Emacs)
         .auto_add_history(true)
         .build();
+
+    // Load configuration
+    let app_config = match get_config() {
+        Ok(config) => config,
+        Err(e) => {
+            eprintln!("Error loading configuration: {}", e);
+            RustShellConfig::default()
+        }
+    };
 
     // Create editor and load alias manager
     let alias_manager = match AliasManager::new() {
@@ -1155,7 +1242,7 @@ fn run_interactive_mode() -> io::Result<()> {
         }
     };
     
-    let helper = RustShellHelper::new(alias_manager);
+    let helper = RustShellHelper::new(alias_manager, app_config.clone());
     
     // Create editor with config
     let mut rl = match Editor::with_config(config) {
@@ -1214,8 +1301,33 @@ fn run_interactive_mode() -> io::Result<()> {
                     break;
                 }
                 
+                // Check for natural language first
+                let processed_line = if is_natural_language(&line) {
+                    if let Some(translated) = process_natural_language(&line, &app_config).await {
+                        // Show confirmation if required
+                        if app_config.requires_confirmation(&translated) {
+                            print!("Execute '{}' ? (y/N): ", translated);
+                            io::stdout().flush().unwrap();
+                            let mut confirmation = String::new();
+                            io::stdin().read_line(&mut confirmation).unwrap();
+                            if !confirmation.trim().to_lowercase().starts_with('y') {
+                                println!("Command cancelled.");
+                                continue;
+                            }
+                        }
+                        translated
+                    } else if app_config.features.fallback_to_traditional {
+                        line.clone()
+                    } else {
+                        println!("Could not process natural language command. Traditional parsing is disabled.");
+                        continue;
+                    }
+                } else {
+                    line.clone()
+                };
+
                 // Parse the command line
-                let args: Vec<String> = line
+                let args: Vec<String> = processed_line
                     .split_whitespace()
                     .map(String::from)
                     .collect();
@@ -1255,12 +1367,13 @@ fn run_interactive_mode() -> io::Result<()> {
     Ok(())
 }
 
-fn main() {
+#[tokio::main]
+async fn main() {
     let args: Vec<String> = env::args().collect();
     
     // Check if we should run in interactive mode (no arguments or explicit "interactive" argument)
     if args.len() <= 1 || (args.len() == 2 && args[1] == "interactive") {
-        if let Err(e) = run_interactive_mode() {
+        if let Err(e) = run_interactive_mode().await {
             eprintln!("Error in interactive mode: {}", e);
         }
         return;
@@ -1268,9 +1381,44 @@ fn main() {
     
     // Otherwise, run in command mode
     let command_args: Vec<String> = args.iter().skip(1).cloned().collect();
+    let input = command_args.join(" ");
+
+    // Load configuration for command mode
+    let app_config = match get_config() {
+        Ok(config) => config,
+        Err(e) => {
+            eprintln!("Error loading configuration: {}", e);
+            RustShellConfig::default()
+        }
+    };
+
+    // Process natural language in command mode
+    let processed_command = if is_natural_language(&input) && app_config.features.enable_llm {
+        if let Some(translated) = process_natural_language(&input, &app_config).await {
+            // Show confirmation if required
+            if app_config.requires_confirmation(&translated) {
+                print!("Execute '{}' ? (y/N): ", translated);
+                io::stdout().flush().unwrap();
+                let mut confirmation = String::new();
+                io::stdin().read_line(&mut confirmation).unwrap();
+                if !confirmation.trim().to_lowercase().starts_with('y') {
+                    println!("Command cancelled.");
+                    return;
+                }
+            }
+            translated.split_whitespace().map(String::from).collect()
+        } else if app_config.features.fallback_to_traditional {
+            command_args
+        } else {
+            eprintln!("Could not process natural language command. Traditional parsing is disabled.");
+            return;
+        }
+    } else {
+        command_args
+    };
     
     // We can't use aliases in non-interactive mode
-    if let Some(command) = parse_command(&command_args, None) {
+    if let Some(command) = parse_command(&processed_command, None) {
         if let Err(e) = command.execute() {
             eprintln!("Error executing command: {}", e);
         }

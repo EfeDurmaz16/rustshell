@@ -1,0 +1,52 @@
+# RustShell Configuration File
+# This file contains default settings for RustShell
+
+[llm]
+# LLM Provider: "openai", "anthropic", "local:http://localhost:8080", "custom:https://your-endpoint.com"
+provider = "openai"
+model = "gpt-3.5-turbo"
+api_key_env = "OPENAI_API_KEY"  # Environment variable containing API key
+endpoint = ""  # Optional custom endpoint
+timeout_seconds = 30
+max_tokens = 150
+temperature = 0.1  # Lower values = more deterministic, higher values = more creative
+enable_cache = true
+
+[safety]
+# Commands that require user confirmation before execution
+require_confirmation = ["rm", "delete", "format", "sudo", "rmdir"]
+
+# Dangerous patterns that will be blocked or require extra confirmation
+dangerous_patterns = ["rm -rf /", "format c:", "sudo rm", "del /s"]
+
+# Enable dry-run mode (show what would be executed without running)
+enable_dry_run = true
+
+# Block potentially destructive commands entirely
+block_destructive = false
+
+[features]
+# Enable LLM-powered natural language processing
+enable_llm = true
+
+# Fall back to traditional command parsing if LLM fails
+fallback_to_traditional = true
+
+# Disable network requests (LLM features will be unavailable)
+offline_mode = false
+
+# Enable command history
+enable_history = true
+
+[ui]
+# Show command hints and suggestions
+show_hints = true
+
+# Enable colored output
+colored_output = true
+
+# Show detailed information about operations
+verbose_mode = false
+
+# Confirm before running destructive operations
+confirm_destructive = true
