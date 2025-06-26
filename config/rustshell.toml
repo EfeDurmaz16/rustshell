@@ -5,7 +5,7 @@
 # LLM Provider: "openai", "anthropic", "local:http://localhost:8080", "custom:https://your-endpoint.com"
 provider = "openai"
 model = "gpt-3.5-turbo"
-api_key_env = "OPENAI_API_KEY"  # Environment variable containing API key
+api_key_env = "YOUR_API_KEY_HERE"  # Put your OpenAI API key here or use env var name
 endpoint = ""  # Optional custom endpoint
 timeout_seconds = 30
 max_tokens = 150
@@ -46,7 +46,7 @@ show_hints = true
 colored_output = true
 
 # Show detailed information about operations
-verbose_mode = false
+verbose_mode = true
 
 # Confirm before running destructive operations
 confirm_destructive = true

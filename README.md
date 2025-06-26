@@ -7,12 +7,14 @@ A cross-platform shell utility written in Rust that provides unified commands wi
 Many developers work across multiple operating systems and may not be familiar with commands on all platforms. RustShell solves this by providing a consistent, intuitive command interface that automatically translates to the appropriate native commands for your current OS.
 
 Key benefits:
+- **Natural Language Processing**: Use AI to translate plain English to shell commands
 - Use consistent, intuitive commands regardless of OS
 - Learn one set of commands that work everywhere
 - Natural language command names that are easy to remember
 - Helpful for developers transitioning between Windows, Linux, and macOS
 - Interactive shell mode with tab completion and command history
 - Support for aliases and command pipelines
+- Safety checks for destructive operations
 
 ## Available Commands
 
@@ -51,7 +53,47 @@ While most commands use Rust's native cross-platform libraries, some commands ha
 
 1. Clone this repository
 2. Build the project: `cargo build --release`
-3. The executable will be available at `target/release/rustshell`
+3. Install globally: `cargo install --path .`
+
+## Configuration
+
+RustShell supports natural language processing using OpenAI's API. To enable this feature:
+
+1. **Copy the configuration template**:
+   ```bash
+   mkdir -p ~/.rustshell
+   cp config/rustshell.toml ~/.rustshell/config.toml
+   ```
+
+2. **Add your OpenAI API key**:
+   Edit `~/.rustshell/config.toml` and replace `YOUR_API_KEY_HERE` with your actual OpenAI API key:
+   ```toml
+   [llm]
+   provider = "openai"
+   model = "gpt-3.5-turbo"
+   api_key_env = "sk-your-actual-api-key-here"
+   ```
+
+3. **Alternative: Use environment variable**:
+   Instead of storing the key in the config, you can use an environment variable:
+   ```bash
+   export OPENAI_API_KEY="your-api-key-here"
+   ```
+   And keep the config as:
+   ```toml
+   api_key_env = "OPENAI_API_KEY"
+   ```
+
+### Natural Language Examples
+
+Once configured, you can use natural language commands:
+
+```bash
+rustshell "create a directory called my_project"
+rustshell "show me what files are in this folder"  
+rustshell "copy all text files to the backup folder"
+rustshell "remove the temporary files"
+```
 
 ## Usage
 

@@ -139,10 +139,25 @@ impl RustShellConfig {
             _ => return Err(anyhow::anyhow!("Unknown LLM provider: {}", self.llm.provider)),
         };
 
+        // Try multiple sources for API key:
+        // 1. Environment variable (if api_key_env is set)
+        // 2. Direct api_key field in config
+        // 3. Default environment variables based on provider
         let api_key = if let Some(env_var) = &self.llm.api_key_env {
-            std::env::var(env_var).ok()
+            // If it looks like an actual key (starts with sk-), use it directly
+            if env_var.starts_with("sk-") || env_var.starts_with("anthropic-") {
+                Some(env_var.clone())
+            } else {
+                // Otherwise treat it as an environment variable name
+                std::env::var(env_var).ok()
+            }
         } else {
-            None
+            // Try default environment variables based on provider
+            match provider {
+                LLMProvider::OpenAI => std::env::var("OPENAI_API_KEY").ok(),
+                LLMProvider::Anthropic => std::env::var("ANTHROPIC_API_KEY").ok(),
+                _ => None,
+            }
         };
 
         Ok(LLMConfig {

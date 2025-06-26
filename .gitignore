@@ -1,2 +1,13 @@
 /target
 .rustshell_history
+
+# Configuration files that may contain API keys
+config/rustshell.toml
+.rustshell/
+*.env
+.env*
+
+# API keys and sensitive files
+**/config.toml
+**/*api_key*
+**/*secret*
